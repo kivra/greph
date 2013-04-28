@@ -18,6 +18,7 @@
 
 %%%_* Module declaration ===============================================
 -module(greph).
+-compile({no_auto_import, [nodes/1]}).
 
 %%%_* Exports ==========================================================
 -export([ compile/1
@@ -33,7 +34,7 @@
 -type graphspec() :: eon:object(atom(), funspec()).       %
 -type funspec()   :: {[arg()], func()}.                   %
 -type arg()       :: atom()                               %
-                   | {atom(), _}                          %Default
+                   | {atom(), _}.                         %Default
 -type func()      :: fun()                                %
                    | {atom(), atom()}                     %Mod:Fun
                    | mfa().                               %
@@ -57,7 +58,8 @@ compile(Spec) ->
 
 
 %% Input.
-check(Spec) ->eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end).
+check(Spec) ->
+  eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end).
 
 is_funspec({Args, Func}) ->
   lists:all(fun is_arg/1, Args) andalso is_func(Func).
@@ -73,9 +75,9 @@ is_func(_)                                                   -> false.
 
 
 %% Graph.
-spec2graph(Spec) -> {nodes(Spec), edges(Spec)}.
+spec2graph(Spec) -> {snodes(Spec), edges(Spec)}.
 
-nodes(Spec) ->
+snodes(Spec) ->
   eon:map(fun(Label, {Args, Func}) ->
             #node{label=Label, args=Args, func=Func}
           end, Spec).
@@ -85,27 +87,27 @@ edges(Spec) ->
              [{Arg, Label} || Arg <- Args] ++ Acc
            end, [], Spec).
 
-leaves(Edges) ->
-  [N || N <- lists:usort(lists:flatten([[A, B] || {A, B} <- Edges])),
-        [N_ || {N_, N} <- Edges] =:= []].
+leaves(Nodes, Edges) ->
+  [N || N <- Nodes, [N1 || {N1, N2} <- Edges, N2 =:= N] =:= []].
 
+nodes(Edges) -> lists:usort(lists:flatten([[A, B] || {A, B} <- Edges])).
 
 kahn_sort({Nodes, Edges}) ->
   lists:flatmap(
     fun(N) ->
-      case lists:keyfind(N, #node.label, Nodes) of
-        false -> [];
-        Node  -> [Node]
+      case eon:get(Nodes, N) of
+        {ok, Node}        -> [Node];
+        {error, notfound} -> []
       end
-    end, kahn_sort(leaves(Edges), Edges, [])).
+    end, lists:reverse(kahn_sort(leaves(nodes(Edges), Edges), Edges, []))).
 
 kahn_sort([], [], L) ->
   L;
 kahn_sort([], [_|_], _L) ->
   throw({error, cyclic});
 kahn_sort([N|S], Edges0, L) ->
-  Edges = Edges0 -- [E || {N, _M} = E <- Edges]
-  kahn_sort(S ++ leaves(Edges), Edges, [N|L]).
+  Edges = Edges0 -- [E || {Node, _M} = E <- Edges0, Node =:= N],
+  kahn_sort(S ++ leaves(nodes(Edges0), Edges), Edges, [N|L]).
 
 
 %% Evaluation.
@@ -113,11 +115,31 @@ do_compile(Nodes) ->
   fun(Input) ->
     s2_maybe:reduce(
       fun(#node{label=L, args=A, func=F}, Acc) ->
-        eon:set(Acc, Label, call(F, [eon:get(Acc, Arg) || Arg <- Args]))
+          Args = get_args(Acc, A),
+          Res  = eval(L, F, Args),
+          eon:set(Acc, L, Res)
       end, Input, Nodes)
   end.
 
-call(F, A) when is_function(F) -> F(A);
+get_args(Obj, As) ->
+  [case eon:get(Obj, A) of
+     {ok, Res} ->
+       Res;
+     {error, notfound} = Err ->
+       ?info("missing ~p", [A]),
+       throw(Err)
+   end || A <- As].
+
+eval(Label, F, Args) ->
+  case ?lift(call(F, Args)) of
+    {ok, Res} ->
+      Res;
+    {error, Rsn} = Err ->
+      ?info("~p: failed with ~p", [Label, Rsn]),
+      throw(Err)
+  end.
+
+call(F, A) when is_function(F) -> apply(F, A);
 call({M, F},     A)            -> apply(M, F, A);
 call({M, F, A1}, A2)           -> apply(M, F, A1 ++ A2).
 
@@ -126,7 +148,7 @@ call({M, F, A1}, A2)           -> apply(M, F, A1 ++ A2).
 -include_lib("eunit/include/eunit.hrl").
 
 stats_greph_test() ->
-  Greph =
+  {ok, Greph} =
     compile(
       [ n,  {[xs],    fun erlang:length/1}
       , m,  {[xs, n], fun(Xs, N) -> lists:sum(Xs) / N end}
@@ -134,10 +156,10 @@ stats_greph_test() ->
       , v,  {[m, m2], fun(M, M2) -> M2 - (M * M) end}
       ]),
   {ok, Res} = Greph([xs, [1, 2, 3, 6]]),
-  4 = eon:get_(Res, n),
-  3 = eon:get_(Res, m),
-  3 = eon:get_(Res, m2), %25/2
-  3 = eon:get_(Res, v),  %7/2
+  4    = eon:get_(Res, n),
+  3.0  = eon:get_(Res, m),
+  12.5 = eon:get_(Res, m2),
+  3.5  = eon:get_(Res, v),
   ok.
 
 -endif.
