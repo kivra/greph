@@ -1,0 +1,7 @@
+{application, greph, [ {description,  "greph"}
+                     , {vsn,          git}
+                     , {applications, [kernel, stdlib]}
+                     , {env,          []}
+                     ]}.
+
+%%% eof

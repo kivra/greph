@@ -1,0 +1,5 @@
+deps/
+.eunit/
+*.beam
+*.app
+*.plt
