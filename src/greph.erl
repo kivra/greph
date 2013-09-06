@@ -21,16 +21,15 @@
 -compile({no_auto_import, [nodes/1]}).
 
 %%%_* Exports ==========================================================
--export([ compile/1
-	]).
+-export([compile/1]).
 
--export_type([
-             ]).
+-export_type([]).
 
 %%%_* Includes =========================================================
 -include("greph.hrl").
 
 %%%_* Code =============================================================
+%%%_ * Types -----------------------------------------------------------
 -type graphspec() :: eon:object(atom(), funspec()).       %
 -type funspec()   :: {[arg()], func()}.                   %
 -type arg()       :: atom()                               %
@@ -46,17 +45,17 @@
         , func
         }).
 
-
+%%%_ * API -------------------------------------------------------------
 -spec compile(graphspec()) -> maybe(graphfun(), _).
 compile(Spec) ->
-  ?do(?thunk(Spec),
+  ?ido(?thunk(Spec),
       fun check/1,
       fun spec2graph/1,
       fun kahn_sort/1,
       fun do_compile/1
       ).
 
-
+%%%_* Private functions ================================================
 %% Input.
 check(Spec) ->
   eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end).
@@ -115,9 +114,16 @@ do_compile(Nodes) ->
   fun(Input) ->
     s2_maybe:reduce(
       fun(#node{label=L, args=A, func=F}, Acc) ->
-          Args = get_args(Acc, A),
-          Res  = eval(L, F, Args),
-          eon:set(Acc, L, Res)
+          case eon:get(Acc, L) of
+              {error, notfound} ->
+                % Label doesnt exists, evaluate and set
+                Args = get_args(Acc, A),
+                Res  = eval(L, F, Args),
+                eon:set(Acc, L, Res);
+              _                 ->
+                % Label has either been generated or is part of the input/Acc
+                Acc
+          end
       end, Input, Nodes)
   end.
 
@@ -131,7 +137,7 @@ get_args(Obj, As) ->
    end || A <- As].
 
 eval(Label, F, Args) ->
-  case ?lift(call(F, Args)) of
+  case ?lift(?TIME(Label, call(F, Args))) of
     {ok, Res} ->
       Res;
     {error, Rsn} = Err ->

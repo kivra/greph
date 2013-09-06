@@ -1,5 +1,9 @@
 # Standard Erlang Makefile
 
+#
+## Globals
+#
+COMPILE_FLAGS = -DS2_DEBUG
 REBAR=./rebar
 PLT=./.plt
 suite=$(if $(SUITE), suites=$(SUITE), )
@@ -12,7 +16,7 @@ all: deps compile
 deps: get-deps
 
 compile:
-	$(REBAR) compile
+	$(REBAR) compile $(COMPILE_FLAGS)
 
 get-deps:
 	$(REBAR) get-deps
