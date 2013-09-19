@@ -48,7 +48,7 @@
 %%%_ * API -------------------------------------------------------------
 -spec compile(graphspec()) -> maybe(graphfun(), _).
 compile(Spec) ->
-  ?ido(?thunk(Spec),
+  ?do(?thunk(Spec),
       fun check/1,
       fun spec2graph/1,
       fun kahn_sort/1,
@@ -137,7 +137,7 @@ get_args(Obj, As) ->
    end || A <- As].
 
 eval(Label, F, Args) ->
-  case ?lift(?TIME(Label, call(F, Args))) of
+  case ?lift(?time(Label, call(F, Args))) of
     {ok, Res} ->
       Res;
     {error, Rsn} = Err ->
