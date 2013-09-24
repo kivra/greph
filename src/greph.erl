@@ -22,6 +22,7 @@
 
 %%%_* Exports ==========================================================
 -export([compile/1]).
+-export([compile/2]).
 
 -export_type([]).
 
@@ -31,6 +32,7 @@
 %%%_* Code =============================================================
 %%%_ * Types -----------------------------------------------------------
 -type graphspec() :: eon:object(atom(), funspec()).       %
+-type opts()      :: proplists:proplist().                %
 -type funspec()   :: {[arg()], func()}.                   %
 -type arg()       :: atom()                               %
                    | {atom(), _}.                         %Default
@@ -48,7 +50,11 @@
 %%%_ * API -------------------------------------------------------------
 -spec compile(graphspec()) -> maybe(graphfun(), _).
 compile(Spec) ->
-  ?do(?thunk(Spec),
+    compile(Spec, []).
+
+-spec compile(graphspec(), opts()) -> maybe(graphfun(), _).
+compile(Spec, Opts) ->
+  ?do(?thunk({Spec, Opts}),
       fun check/1,
       fun spec2graph/1,
       fun kahn_sort/1,
@@ -57,8 +63,8 @@ compile(Spec) ->
 
 %%%_* Private functions ================================================
 %% Input.
-check(Spec) ->
-  eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end).
+check({Spec, Opts}) ->
+  {eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end), Opts}.
 
 is_funspec({Args, Func}) ->
   lists:all(fun is_arg/1, Args) andalso is_func(Func).
@@ -74,7 +80,7 @@ is_func(_)                                                   -> false.
 
 
 %% Graph.
-spec2graph(Spec) -> {snodes(Spec), edges(Spec)}.
+spec2graph({Spec, Opts}) -> {{snodes(Spec), edges(Spec)}, Opts}.
 
 snodes(Spec) ->
   eon:map(fun(Label, {Args, Func}) ->
@@ -91,14 +97,15 @@ leaves(Nodes, Edges) ->
 
 nodes(Edges) -> lists:usort(lists:flatten([[A, B] || {A, B} <- Edges])).
 
-kahn_sort({Nodes, Edges}) ->
-  lists:flatmap(
-    fun(N) ->
-      case eon:get(Nodes, N) of
-        {ok, Node}        -> [Node];
-        {error, notfound} -> []
-      end
-    end, lists:reverse(kahn_sort(leaves(nodes(Edges), Edges), Edges, []))).
+kahn_sort({{Nodes, Edges}, Opts}) ->
+  { lists:flatmap(
+      fun(N) ->
+        case eon:get(Nodes, N) of
+          {ok, Node}        -> [Node];
+          {error, notfound} -> []
+        end
+      end, lists:reverse(kahn_sort(leaves(nodes(Edges), Edges), Edges, [])))
+  , Opts }.
 
 kahn_sort([], [], L) ->
   L;
@@ -110,15 +117,15 @@ kahn_sort([N|S], Edges0, L) ->
 
 
 %% Evaluation.
-do_compile(Nodes) ->
+do_compile({Nodes, Opts}) ->
   fun(Input) ->
     s2_maybe:reduce(
       fun(#node{label=L, args=A, func=F}, Acc) ->
           case eon:get(Acc, L) of
               {error, notfound} ->
                 % Label doesnt exists, evaluate and set
-                Args = get_args(Acc, A),
-                Res  = eval(L, F, Args),
+                Args = eval_opts(get_args(Acc, A), Opts, pre_fun),
+                Res  = eval_opts(eval(L, F, Args), Opts, post_fun),
                 eon:set(Acc, L, Res);
               _                 ->
                 % Label has either been generated or is part of the input/Acc
@@ -145,6 +152,12 @@ eval(Label, F, Args) ->
       throw(Err)
   end.
 
+eval_opts(Args, Opts, Key) ->
+  case eon:get(eon:new(Opts), Key) of
+    {error, notfound} -> Args;
+    {ok, F}           -> call(F, [Args])
+  end.
+
 call(F, A) when is_function(F) -> apply(F, A);
 call({M, F},     A)            -> apply(M, F, A);
 call({M, F, A1}, A2)           -> apply(M, F, A1 ++ A2).
@@ -168,6 +181,22 @@ stats_greph_test() ->
   3.5  = eon:get_(Res, v),
   ok.
 
+opts_greph_test() ->
+  {ok, Greph} =
+    compile(
+      [ n,  {[xs],    fun erlang:length/1}
+      , m,  {[xs, n], fun(Xs, N) -> lists:sum(Xs) / N end}
+      , m2, {[xs, n], fun(Xs, N) -> lists:sum([X * X || X <- Xs]) / N end}
+      , v,  {[m, m2], fun(M, M2) -> M2 - (M * M) end}
+      ],
+      [ {pre_fun, fun(A) -> A end}
+      , {post_fun, fun(Ret) -> Ret end}]),
+  {ok, Res} = Greph([xs, [1, 2, 3, 6]]),
+  4    = eon:get_(Res, n),
+  3.0  = eon:get_(Res, m),
+  12.5 = eon:get_(Res, m2),
+  3.5  = eon:get_(Res, v),
+  ok.
 -endif.
 
 %%%_* Emacs ============================================================
