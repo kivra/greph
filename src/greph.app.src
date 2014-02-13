@@ -2,6 +2,7 @@
                      , {vsn,          git}
                      , {applications, [kernel, stdlib]}
                      , {env,          []}
+                     , {registered,   []}
                      ]}.
 
 %%% eof
