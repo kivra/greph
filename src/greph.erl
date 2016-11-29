@@ -39,7 +39,7 @@
 -type func()      :: fun()                                %
                    | {atom(), atom()}                     %Mod:Fun
                    | mfa().                               %
--type graphfun()  :: fun((eon:object()) -> eon:object()). %
+-type graphfun()  :: fun((eon:object()) -> maybe(eon:object(), _)). %
 
 -record(node,
         { label
