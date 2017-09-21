@@ -5,7 +5,6 @@
 %%% @todo lazy evaluation
 %%% @todo parallel evaluation
 %%% @todo logging & reporting
-%%% @todo decorators
 %%% @todo debugging tools: schema, plan
 %%% @todo fine grained topsort: basic blocks
 %%% @todo graph templates (generate behaviour .erl)
@@ -124,8 +123,19 @@ do_compile({Nodes, Opts}) ->
           case eon:get(Acc, L) of
               {error, notfound} ->
                 % Label doesnt exists, evaluate and set
-                Args = eval_opts(get_args(Acc, A), Opts, pre_fun),
-                Res  = eval_opts(eval(L, F, Args), Opts, post_fun),
+                Res =
+                  case {eon:get(Opts, pre_fun), eon:get(Opts, post_fun)} of
+                    {{ok, PreFun}, {ok, PostFun}} ->
+                      {Pre, Args} = call(PreFun, [get_args(Acc, A)]),
+                      call(PostFun, [Pre, eval(L, F, Args)]);
+                    {{ok, PreFun}, _}             ->
+                      {_, Args} = call(PreFun, [get_args(Acc, A)]),
+                      eval(L, F, Args);
+                    {_,            {ok, PostFun}} ->
+                      call(PostFun, eval(L, F, get_args(Acc, A)));
+                    {_,            _}             ->
+                      eval(L, F, get_args(Acc, A))
+                  end,
                 eon:set(Acc, L, Res);
               _                 ->
                 % Label has either been generated or is part of the input/Acc
@@ -150,12 +160,6 @@ eval(Label, F, Args) ->
     {error, Rsn} = Err ->
       ?info("~p: failed with ~p", [Label, Rsn]),
       throw(Err)
-  end.
-
-eval_opts(Args, Opts, Key) ->
-  case eon:get(eon:new(Opts), Key) of
-    {error, notfound} -> Args;
-    {ok, F}           -> call(F, [Args])
   end.
 
 call(F, A) when is_function(F) -> apply(F, A);
@@ -189,8 +193,8 @@ opts_greph_test() ->
       , m2, {[xs, n], fun(Xs, N) -> lists:sum([X * X || X <- Xs]) / N end}
       , v,  {[m, m2], fun(M, M2) -> M2 - (M * M) end}
       ],
-      [ {pre_fun, fun(A) -> A end}
-      , {post_fun, fun(Ret) -> Ret end}]),
+      [ {pre_fun, fun(A) -> {pre_args, A} end}
+      , {post_fun, fun(pre_args, Ret) -> Ret end}]),
   {ok, Res} = Greph([xs, [1, 2, 3, 6]]),
   4    = eon:get_(Res, n),
   3.0  = eon:get_(Res, m),
