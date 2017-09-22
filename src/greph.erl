@@ -126,13 +126,13 @@ do_compile({Nodes, Opts}) ->
                 Res =
                   case {eon:get(Opts, pre_fun), eon:get(Opts, post_fun)} of
                     {{ok, PreFun}, {ok, PostFun}} ->
-                      {Pre, Args} = call(PreFun, [get_args(Acc, A)]),
-                      call(PostFun, [Pre, eval(L, F, Args)]);
+                      {Pre, Args} = call(PreFun, [L, get_args(Acc, A)]),
+                      call(PostFun, [L, Pre, eval(L, F, Args)]);
                     {{ok, PreFun}, _}             ->
-                      {_, Args} = call(PreFun, [get_args(Acc, A)]),
+                      {_, Args} = call(PreFun, [L, get_args(Acc, A)]),
                       eval(L, F, Args);
                     {_,            {ok, PostFun}} ->
-                      call(PostFun, eval(L, F, get_args(Acc, A)));
+                      call(PostFun, [L, eval(L, F, get_args(Acc, A))]);
                     {_,            _}             ->
                       eval(L, F, get_args(Acc, A))
                   end,
@@ -193,8 +193,8 @@ opts_greph_test() ->
       , m2, {[xs, n], fun(Xs, N) -> lists:sum([X * X || X <- Xs]) / N end}
       , v,  {[m, m2], fun(M, M2) -> M2 - (M * M) end}
       ],
-      [ {pre_fun, fun(A) -> {pre_args, A} end}
-      , {post_fun, fun(pre_args, Ret) -> Ret end}]),
+      [ {pre_fun, fun(_Label, A) -> {pre_args, A} end}
+      , {post_fun, fun(_Label, pre_args, Ret) -> Ret end}]),
   {ok, Res} = Greph([xs, [1, 2, 3, 6]]),
   4    = eon:get_(Res, n),
   3.0  = eon:get_(Res, m),
