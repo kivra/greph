@@ -53,10 +53,23 @@ compile(Spec) ->
 
 -spec compile(graphspec(), opts()) -> maybe(graphfun(), _).
 compile(Spec, Opts) ->
-  ?lift(do_compile(spec2list(Spec), Opts)).
+  case proplists:get_bool(linear_execution, Opts) of
+    true ->
+      ?lift(do_compile({spec2list(Spec), Opts}));
+    false ->
+      ?do(?thunk({Spec, Opts}),
+          fun check/1,
+          fun spec2graph/1,
+          fun kahn_sort/1,
+          fun do_compile/1
+         )
+  end.
 
 %%%_* Private functions ================================================
 %% Input.
+check({Spec, Opts}) ->
+  {eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end), Opts}.
+
 spec2list([]) -> [];
 spec2list([Label, {Args, Func}|Rest]) ->
   true = is_atom(Label) andalso is_funspec({Args, Func}),
@@ -74,8 +87,44 @@ is_func({M, F})    when is_atom(M) , is_atom(F)              -> true;
 is_func({M, F, A}) when is_atom(M) , is_atom(F) , is_list(A) -> true;
 is_func(_)                                                   -> false.
 
+%% Graph.
+spec2graph({Spec, Opts}) -> {{snodes(Spec), edges(Spec)}, Opts}.
+
+snodes(Spec) ->
+  eon:map(fun(Label, {Args, Func}) ->
+            #node{label=Label, args=Args, func=Func}
+          end, Spec).
+
+edges(Spec) ->
+  eon:fold(fun(Label, {Args, _Func}, Acc) ->
+             [{Arg, Label} || Arg <- Args] ++ Acc
+           end, [], Spec).
+
+leaves(Nodes, Edges) ->
+  [N || N <- Nodes, [N1 || {N1, N2} <- Edges, N2 =:= N] =:= []].
+
+nodes(Edges) -> lists:usort(lists:flatten([[A, B] || {A, B} <- Edges])).
+
+kahn_sort({{Nodes, Edges}, Opts}) ->
+  { lists:flatmap(
+      fun(N) ->
+        case eon:get(Nodes, N) of
+          {ok, Node}        -> [Node];
+          {error, notfound} -> []
+        end
+      end, lists:reverse(kahn_sort(leaves(nodes(Edges), Edges), Edges, [])))
+  , Opts }.
+
+kahn_sort([], [], L) ->
+  L;
+kahn_sort([], [_|_], _L) ->
+  throw({error, cyclic});
+kahn_sort([N|S], Edges0, L) ->
+  Edges = Edges0 -- [E || {Node, _M} = E <- Edges0, Node =:= N],
+  kahn_sort(S ++ leaves(nodes(Edges0), Edges), Edges, [N|L]).
+
 %% Evaluation.
-do_compile(Nodes, Opts) ->
+do_compile({Nodes, Opts}) ->
   fun(Input) ->
     s2_maybe:reduce(
       fun(#node{label=L, args=A, func=F}, Acc) ->
