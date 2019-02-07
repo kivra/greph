@@ -87,6 +87,7 @@ is_func({M, F})    when is_atom(M) , is_atom(F)              -> true;
 is_func({M, F, A}) when is_atom(M) , is_atom(F) , is_list(A) -> true;
 is_func(_)                                                   -> false.
 
+
 %% Graph.
 spec2graph({Spec, Opts}) -> {{snodes(Spec), edges(Spec)}, Opts}.
 
@@ -122,6 +123,7 @@ kahn_sort([], [_|_], _L) ->
 kahn_sort([N|S], Edges0, L) ->
   Edges = Edges0 -- [E || {Node, _M} = E <- Edges0, Node =:= N],
   kahn_sort(S ++ leaves(nodes(Edges0), Edges), Edges, [N|L]).
+
 
 %% Evaluation.
 do_compile({Nodes, Opts}) ->
