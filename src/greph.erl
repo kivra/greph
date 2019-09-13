@@ -154,7 +154,7 @@ get_args(Obj, As) ->
    end || A <- As].
 
 eval(Label, F, Args) ->
-  case ?lift(?time(Label, call(F, Args))) of
+  case ?lift(?time([time, label, Label], call(F, Args))) of
     {ok, Res} ->
       Res;
     {error, Rsn} = Err ->
