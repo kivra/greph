@@ -31,6 +31,7 @@
 %%%_* Code =============================================================
 %%%_ * Types -----------------------------------------------------------
 -type graphspec() :: eon:object(atom(), funspec()).       %
+-export_type([graphspec/0]).
 -type opts()      :: proplists:proplist().                %
 -type funspec()   :: {[arg()], func()}.                   %
 -type arg()       :: atom()                               %
