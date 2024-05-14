@@ -1,6 +1,6 @@
 {application, greph, [ {description,  "greph"}
                      , {vsn,          git}
-                     , {applications, [kernel, stdlib]}
+                     , {applications, [kernel, stdlib, eon, stdlib2, opentelemetry_api]}
                      , {env,          []}
                      , {registered,   []}
                      ]}.
