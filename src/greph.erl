@@ -26,6 +26,9 @@
 -export_type([]).
 
 %%%_* Includes =========================================================
+-include_lib("kernel/include/logger.hrl").
+-include_lib("opentelemetry_api/include/opentelemetry.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
 -include("greph.hrl").
 
 %%%_* Code =============================================================
@@ -150,18 +153,39 @@ get_args(Obj, As) ->
      {ok, Res} ->
        Res;
      {error, notfound} = Err ->
-       ?info("missing ~p", [A]),
+       ?LOG_INFO(#{message => greph_args_missing, argname => A}),
        throw(Err)
    end || A <- As].
 
 eval(Label, F, Args) ->
-  case ?lift(?time([time, label, Label], call(F, Args))) of
-    {ok, Res} ->
-      Res;
-    {error, Rsn} = Err ->
-      ?info("~p: failed with ~p", [Label, Rsn]),
-      throw(Err)
-  end.
+  SpanName = case Label of
+                _ when is_atom(Label) ->
+                  BinLabel = atom_to_binary(Label),
+                  <<"greph eval ", BinLabel/binary>>;
+                _ ->
+                  <<"greph eval">>
+             end,
+  SpanOpts = #{
+                attributes => #{},
+                links => [],
+                is_recording => true,
+                start_time => opentelemetry:timestamp(),
+                kind => ?SPAN_KIND_INTERNAL
+              },
+  ?with_span(SpanName, SpanOpts,
+    fun(_SpanCtx) ->
+      case
+        ?lift(call(F, Args))
+      of
+        {ok, Res} ->
+          ?set_status(?OTEL_STATUS_OK),
+          Res;
+        {error, Rsn} = Err ->
+          ?set_status(?OTEL_STATUS_ERROR),
+          ?LOG_INFO(#{message => greph_fail, label => Label, reason => Rsn}),
+          throw(Err)
+      end
+    end).
 
 call(F, A) when is_function(F) -> apply(F, A);
 call({M, F},     A)            -> apply(M, F, A);

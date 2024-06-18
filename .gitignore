@@ -1,5 +1,1 @@
-deps/
-.eunit/
-*.beam
-*.app
-*.plt
+_build
