@@ -42,7 +42,7 @@
 -type func()      :: fun()                                %
                    | {atom(), atom()}                     %Mod:Fun
                    | mfa().                               %
--type graphfun()  :: fun((eon:object()) -> maybe(eon:object(), _)). %
+-type graphfun()  :: fun((eon:object()) -> 'maybe'(eon:object(), _)). %
 
 -record(node,
         { label
@@ -51,11 +51,11 @@
         }).
 
 %%%_ * API -------------------------------------------------------------
--spec compile(graphspec()) -> maybe(graphfun(), _).
+-spec compile(graphspec()) -> 'maybe'(graphfun(), _).
 compile(Spec) ->
     compile(Spec, []).
 
--spec compile(graphspec(), opts()) -> maybe(graphfun(), _).
+-spec compile(graphspec(), opts()) -> 'maybe'(graphfun(), _).
 compile(Spec, Opts) ->
   ?do(?thunk({Spec, Opts}),
       fun check/1,
