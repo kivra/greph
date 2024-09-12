@@ -45,29 +45,39 @@
 -type graphfun()  :: fun((eon:object()) -> 'maybe'(eon:object(), _)). %
 
 -record(node,
-        { label
-        , args
-        , func
+        { label :: atom()
+        , args  :: [arg()]
+        , func  :: func()
         }).
 
 %%%_ * API -------------------------------------------------------------
 -spec compile(graphspec()) -> 'maybe'(graphfun(), _).
 compile(Spec) ->
-    compile(Spec, []).
+  compile(Spec, []).
 
 -spec compile(graphspec(), opts()) -> 'maybe'(graphfun(), _).
 compile(Spec, Opts) ->
-  ?do(?thunk({Spec, Opts}),
-      fun check/1,
-      fun spec2graph/1,
-      fun kahn_sort/1,
-      fun do_compile/1
-      ).
+  case proplists:get_bool(linear_execution, Opts) of
+    true ->
+      ?lift(do_compile({spec2list(Spec), Opts}));
+    false ->
+      ?do(?thunk({Spec, Opts}),
+          fun check/1,
+          fun spec2graph/1,
+          fun kahn_sort/1,
+          fun do_compile/1
+         )
+  end.
 
 %%%_* Private functions ================================================
 %% Input.
 check({Spec, Opts}) ->
   {eon:new(Spec, fun(K, V) -> is_atom(K) andalso is_funspec(V) end), Opts}.
+
+spec2list([]) -> [];
+spec2list([Label, {Args, Func}|Rest]) ->
+  true = is_atom(Label) andalso is_funspec({Args, Func}),
+  [#node{label=Label, args=Args, func=Func}|spec2list(Rest)].
 
 is_funspec({Args, Func}) ->
   lists:all(fun is_arg/1, Args) andalso is_func(Func).
